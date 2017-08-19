@@ -1,2 +1,51 @@
-<apex:page controller="FileUploadDemoController">
+<apex:page controller="FileUploadDemoController" showHeader="false">
+	<apex:includeScript value="https://code.jquery.com/jquery-3.2.1.min.js"/>
+    <apex:includescript value="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular.min.js"/>
+    <apex:stylesheet value="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"/>
+	<script type="text/javascript">
+		Visualforce.remoting.timeout = 12000;
+		
+		var fileUploadDemo = angular.module('fileUploadDemo',[]);
+		fileUploadDemo.controller('fileUploadDemoController', function($scope){
+			$scope.fileResult;
+			$scope.lstAttachmentWrapper;
+			Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.getFiles', '{!ObjRecordId}',function(result){
+				if( result )
+				{
+					$scope.lstAttachmentWrapper = result;
+					$scope.fileResult = result;
+				}
+				else
+					$scope.fileResult = 'Could not connect to the controller';
+				$scope.$apply();
+			});
+		});
+	</script>
+	
+	LstFiles - {!LstFiles}
+	
+	<div ng-app="fileUploadDemo" ng-controller="fileUploadDemoController" style="width:65%;margin-left: 15%; margin-top: 5%">
+		<div style="margin:5%">
+            <table class="table table-hover">
+                <thead>
+                	<tr>
+                		<td>Sr #</td>
+                		<td>Name</td>
+                		<td>Description</td>
+                		<td>Size</td>
+                		<td>Actions</td>
+               		</tr>
+            	</thead>
+                <tbody>
+                	<tr ng-repeat="attachment in lstAttachmentWrapper">
+                		<td>{{attachment.serialNumber}}</td>
+                		<td>{{attachment.title}}</td>
+                		<td>{{attachment.description}}</td>
+                		<td>{{attachment.fileSize}}</td>
+                		<td>{{attachment.attachmentAction.downloadLink}}</td>
+               		</tr>
+              	</tbody>
+            </table>
+        </div>
+	</div>
 </apex:page>
