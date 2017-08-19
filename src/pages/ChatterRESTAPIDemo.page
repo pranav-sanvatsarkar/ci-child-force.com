@@ -1,0 +1,187 @@
+<apex:page showHeader="false">
+    <apex:includeScript value="https://code.jquery.com/jquery-3.2.1.min.js"/>
+    <apex:includescript value="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular.min.js"/>
+    <apex:stylesheet value="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"/>
+    <script>
+           
+            var fileName;
+            var uploadFileSetting;
+            var objFormData;
+            
+            var updateProgress = function(event)
+            {
+                //console.log('Upload Progress:');
+                if( event.lengthComputable )
+                {
+                    //console.clear();
+                    console.log( Math.ceil((event.loaded / event.total) * 100) + ' % completed');
+                }
+                else
+                    console.log('Non-computable');
+            }
+            
+            var onFileChanged = function(element)
+            {
+                var objFormData = new FormData();
+                objFormData.append("fileData", element.files[0]);
+                objFormData.append("formData", "form-data; name='fileUpload', filename=\'" + element.files[0].name + "\'");
+                fileName = element.files[0].name;
+                
+                uploadFileSetting = {
+                    "async": true,
+                    "crossDomain": true,
+                    "url": "{!$Site.Domain}/services/data/v40.0/connect/files/users/{!$User.Id}",
+                    "method": "POST",
+                    "headers" : {
+                        "Authorization": "Bearer {!$Api.Session_ID}"
+                    },
+                    "processData": false,
+                    "contentType": false,
+                    "mimeType": "multipart/form-data",
+                    "data": objFormData,
+                    "xhr" : function(){
+                        myXhr = $.ajaxSettings.xhr();
+                        if(myXhr.upload)
+                        {
+                            myXhr.upload.addEventListener('progress',updateProgress,false);
+                        }
+                        return myXhr;
+                    }
+                };
+            }
+            
+            var uploadAttachment = function()
+            {
+                $.ajax(uploadFileSetting).done(function (response) {
+                  console.log('Upload complete!');
+                });
+            }
+            
+            
+            
+            var chatterAPI = angular.module('chatterAPI',[]);
+            
+            chatterAPI.controller('chatterAPIController', function($scope,$http){
+                try
+                {
+                    $scope.fileList = [];
+                    $scope.progressPercentage = 0;
+                    
+                    $scope.fetchMyFiles = function()
+                    {
+                        $http({
+                            async : true,
+                            crossDomain : true,
+                            url : '/services/data/v40.0/connect/communities/0DBf40000002zin/files/users/{!$User.Id}',
+                            method : 'GET',
+                            headers : {
+                                authorization : 'Bearer {!$Api.Session_ID}'
+                            }
+                        }).then(function successCallback(response){
+                            for(var i=0; i<response.data.files.length;i++)
+                            {
+                                var file = response.data.files[i];
+                                var fileSize = response.data.files[i].contentSize;
+                                if( fileSize > (1024*1024) )
+                                    file.sizeInMB = (response.data.files[i].contentSize / (1024*1024)).toFixed(2) + " MB";
+                                else
+                                    file.sizeInMB = (response.data.files[i].contentSize / (1024)).toFixed(2) + " KB";
+                                $scope.fileList[i] = file;
+                            }
+                            $scope.fileList = response.data.files;
+                        },function errorCallback(response){
+                            console.log(response);
+                        });
+                    }
+                    
+                    $scope.fetchMyFiles();
+                    
+                    $scope.attachmentSetting;
+                    
+                    $scope.uploadAttachment = function()
+                    {
+                        $.ajax($scope.attachmentSetting).done(function (response) {
+                            $scope.fetchMyFiles();
+                            $scope.progressPercentage = 0;
+                            angular.element('input[type=\'file\']').val(null);
+                        })
+                        .fail(function(response){
+                            console.log(response);
+                        });
+                    }
+                    
+                    $scope.trackUploadProgress = function(event)
+                    {
+                        if( event.lengthComputable )
+                        {
+                            $scope.progressPercentage = Math.ceil((event.loaded / event.total) * 100);
+                            $scope.$apply();
+                        }
+                        else
+                            console.log('Non-computable');
+                    }
+                                        
+                    $scope.xhrProgressTracker = function()
+                    {
+                        myXhr = $.ajaxSettings.xhr();
+                        if(myXhr.upload)
+                        {
+                            myXhr.upload.addEventListener('progress',$scope.trackUploadProgress,false);
+                        }
+                        return myXhr;
+                    }
+                    
+                    $scope.onAttachFile = function(element)
+                    {
+                        var objFormData = new FormData();
+                        objFormData.append("fileData", element.files[0]);
+                        objFormData.append("formData", "formdata; name='fileUpload', filename=\'" + element.files[0].name + "\'");
+                        //console.log("formData" + objFormData);
+                        fileName = element.files[0].name;
+                       $scope.progressPercentage = 0;
+                        $scope.attachmentSetting = {
+                            async : true,
+                            crossDomain : true,
+                            url : '/services/data/v40.0/connect/communities/0DBf40000002zin/files/users/{!$User.Id}',
+                            method : 'POST',
+                            headers : {
+                                authorization : 'Bearer {!$Api.Session_ID}'
+                            },
+                            processData: false,
+                            contentType: false,
+                            mimeType: 'multipart/form-data',
+                            data: objFormData,
+                            "xhr" : $scope.xhrProgressTracker
+                        };
+                    }
+                }
+                catch(ex)
+                {
+                    console.log(ex);
+                }
+            });
+    </script>
+    <!--Calling Chatter REST API - {!$Api.Session_ID} - User id - {!$User.Id}
+    <br/>
+    <input type="file" id="inputFileControl" onchange="onFileChanged(this);"/>
+    <input type="button" value="Upload" onclick="uploadAttachment();"/>-->
+    <div style="width:65%;margin-left: 15%; margin-top: 5%" ng-app="chatterAPI" ng-controller="chatterAPIController">
+        <div style="margin:5.5%">
+            Upload file here
+            <input type="file" id="inputFileControl" onchange="angular.element(this).scope().onAttachFile(this)"/>
+            <input type="button" ng-click="uploadAttachment()" value="Upload" class="btn btn-default"/>
+            <br/>
+            <br/>
+            <div class="progress">
+                <div class="progress-bar" style="width:{{progressPercentage}}%"/>
+            </div>
+            <p>Attachment progress: {{progressPercentage}} %</p>
+        </div>
+        <div style="margin:5%">
+            <table class="table table-hover">
+                <thead><tr><td>File Name</td><td>Size</td></tr></thead>
+                <tbody><tr ng-repeat="file in fileList"><td>{{file.name}}</td><td>{{file.sizeInMB}}</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</apex:page>
