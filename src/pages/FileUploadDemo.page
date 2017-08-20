@@ -7,24 +7,127 @@
 		
 		var fileUploadDemo = angular.module('fileUploadDemo',[]);
 		fileUploadDemo.controller('fileUploadDemoController', function($scope){
+			
 			$scope.fileResult;
 			$scope.lstAttachmentWrapper;
-			Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.getFiles', '{!ObjRecordId}',function(result){
-				if( result )
+			
+			$scope.getAttachments = function(){
+				Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.getFiles', '{!ObjRecordId}',function(result){
+					if( result )
+					{
+						$scope.lstAttachmentWrapper = result;
+						$scope.fileResult = result;
+						angular.element('input[type=\'file\']').val(null);
+						$scope.uploadProgress = 0;
+					}
+					else
+						$scope.fileResult = 'Could not connect to the controller';
+					$scope.$apply();
+				});
+			}
+			
+			$scope.getAttachments();
+			
+			$scope.attachmentFile = {};
+			
+			$scope.fileChunkArrayIndex = -1;
+			$scope.fileChunkArraySize = -1;
+			$scope.fileChunkArray = [];
+			$scope.uploadProgress = 0;
+			
+			$scope.onFileChanged = function(element){
+				$scope.attachmentFile = element.files[0];
+				$scope.attachmentFile.id = null;
+				console.log(element.files[0]);
+				$scope.fileReader = new FileReader();
+				$scope.fileReader.onload = function()
 				{
-					$scope.lstAttachmentWrapper = result;
-					$scope.fileResult = result;
+					//console.log('Read complete:'+$scope.fileReader.result);
+				}
+				$scope.fileReader.readAsDataURL(element.files[0]);
+			}
+			
+			$scope.uploadAttachment = function(){
+				console.log('File reader:' + $scope.fileReader);
+				if( $scope.attachmentFile.size > (1024*1024*1024)*2 )
+				{
+					alert('Cannot upload this file as the size is more that 2 GB');
+				}
+				else if( $scope.attachmentFile.size > (1024*1024)*35 )
+				{
+					alert('The file size is more that 35 MB. Try uploading as file instead.');
 				}
 				else
-					$scope.fileResult = 'Could not connect to the controller';
-				$scope.$apply();
+				{
+					var fileSize;
+					if( $scope.attachmentFile.size > (1024*1024) )
+						fileSize = ($scope.attachmentFile.size / (1024*1024)).toFixed(2) + ' MB';
+					else if( $scope.attachmentFile.size > 1024 )
+						fileSize = ($scope.attachmentFile.size / 1024).toFixed(2) + ' KB';
+					else
+						fileSize = $scope.attachmentFile.size + ' Bytes';
+						
+					alert('The file size is ' + fileSize);
+					if( $scope.fileReader.result.length > 1024 )
+					{
+						$scope.fileChunkArray = $scope.fileReader.result.split(',')[1].match(/.{1,92160}/g);
+						$scope.fileChunkArraySize = $scope.fileChunkArray.length;
+						$scope.fileChunkArrayIndex = 0;
+					}
+				}
+			} 
+			
+			$scope.uploadFileInChunks = function( chunk ){
+				if( $scope.fileChunkArrayIndex == $scope.fileChunkArraySize-1 )
+				{
+					// code for last chunk
+					Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.insertAttachment',$scope.attachmentFile.name, 'Description', '{!$CurrentPage.parameters.id}',chunk, $scope.attachmentFile.id, function(result, event){
+						$scope.uploadProgress = Math.ceil((($scope.fileChunkArrayIndex+1) / $scope.fileChunkArraySize) * 100);
+						$scope.attachmentFile = null;
+						$scope.$apply();
+						$scope.getAttachments();
+					} );
+				}
+				else if( $scope.fileChunkArrayIndex < $scope.fileChunkArraySize-1 )
+				{
+					// code for all non-last chunks
+					Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.uploadChunk',$scope.attachmentFile.name, 'Description', '{!$CurrentPage.parameters.id}',chunk, $scope.attachmentFile.id, function(result, event){
+						if( $scope.attachmentFile.id == null )
+							$scope.attachmentFile.id = result;
+						$scope.uploadProgress = Math.ceil((($scope.fileChunkArrayIndex+1) / $scope.fileChunkArraySize) * 100);
+						$scope.fileChunkArrayIndex++;
+						$scope.$apply();
+					} );
+				}
+			}
+			
+			$scope.$watch('fileChunkArrayIndex',function(newValue,oldValue){
+				$scope.uploadFileInChunks($scope.fileChunkArray[newValue] );
 			});
+			
+			$scope.deleteAllAttachments = function()
+			{
+				Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.deleteAllAttachments','{!$CurrentPage.parameters.id}', function(result, event){
+					$scope.getAttachments();
+				} );
+			}
 		});
 	</script>
 	
-	LstFiles - {!LstFiles}
-	
 	<div ng-app="fileUploadDemo" ng-controller="fileUploadDemoController" style="width:65%;margin-left: 15%; margin-top: 5%">
+		<div style="margin:5%">
+			<p>Upload a file here</p>
+			<input type="file" id="inputAttachment" onchange="angular.element(this).scope().onFileChanged(this)"/>
+			<input type="button" value="Upload" ng-click="uploadAttachment()"/>
+			<input type="button" value="Delete all attachments" ng-click="deleteAllAttachments()"/>
+			<br/>
+			<br/>
+			 <div class="progress">
+                <div class="progress-bar" style="width:{{uploadProgress}}%"/>
+            </div>
+            <br/>
+			<p>Upload progress: {{uploadProgress}}%</p>
+		</div>
 		<div style="margin:5%">
             <table class="table table-hover">
                 <thead>
@@ -32,6 +135,7 @@
                 		<td>Sr #</td>
                 		<td>Name</td>
                 		<td>Description</td>
+                		<td>Type</td>
                 		<td>Size</td>
                 		<td>Actions</td>
                		</tr>
@@ -41,6 +145,7 @@
                 		<td>{{attachment.serialNumber}}</td>
                 		<td>{{attachment.title}}</td>
                 		<td>{{attachment.description}}</td>
+                		<td>{{attachment.attachmentType}}</td>
                 		<td>{{attachment.fileSize}}</td>
                 		<td>{{attachment.attachmentAction.downloadLink}}</td>
                		</tr>
