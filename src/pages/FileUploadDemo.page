@@ -1,9 +1,12 @@
 <apex:page controller="FileUploadDemoController" showHeader="false">
 	<apex:includeScript value="https://code.jquery.com/jquery-3.2.1.min.js"/>
+	<!-- <apex:includeScript value="../soap/ajax/40.0/connection.js"/>-->
     <apex:includescript value="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular.min.js"/>
     <apex:stylesheet value="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"/>
+    <apex:includeScript value="{!URLFOR($Resource.connection,'connection.js')}"/>
 	<script type="text/javascript">
 		Visualforce.remoting.timeout = 12000;
+		sforce.connection.sessionId = '{!GETSESSIONID()}';
 		
 		var fileUploadDemo = angular.module('fileUploadDemo',[]);
 		fileUploadDemo.controller('fileUploadDemoController', function($scope){
@@ -36,9 +39,10 @@
 			$scope.uploadProgress = 0;
 			
 			$scope.onFileChanged = function(element){
+				$scope.attachmentFile = {};
 				$scope.attachmentFile = element.files[0];
 				$scope.attachmentFile.id = null;
-				console.log(element.files[0]);
+				//console.log(element.files[0]);
 				$scope.fileReader = new FileReader();
 				$scope.fileReader.onload = function()
 				{
@@ -47,8 +51,26 @@
 				$scope.fileReader.readAsDataURL(element.files[0]);
 			}
 			
+			$scope.progressTrackerXHR = function(event)
+			{
+				$scope.uploadProgress = Math.ceil((event.loaded / event.total) * 100);
+                $scope.$apply();
+                
+			}
+			
 			$scope.uploadAttachment = function(){
 				console.log('File reader:' + $scope.fileReader);
+				var attachment = new sforce.SObject('Attachment');
+				attachment.Body = $scope.fileReader.result.split(',')[1];
+				attachment.Name = $scope.attachmentFile.name;
+				attachment.ParentId = '{!$CurrentPage.parameters.id}';
+			 	var lstAttachments = [];
+				lstAttachments[0] = attachment;
+				sforce.connection.create( lstAttachments, function(result){
+					console.log('result:' + result);
+					$scope.getAttachments();
+				}, $scope.progressTrackerXHR );
+				/*
 				if( $scope.attachmentFile.size > (1024*1024*1024)*2 )
 				{
 					alert('Cannot upload this file as the size is more that 2 GB');
@@ -75,6 +97,7 @@
 						$scope.fileChunkArrayIndex = 0;
 					}
 				}
+				*/
 			} 
 			
 			$scope.uploadFileInChunks = function( chunk ){
