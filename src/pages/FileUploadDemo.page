@@ -9,7 +9,7 @@
 		sforce.connection.sessionId = '{!GETSESSIONID()}';
 		
 		var fileUploadDemo = angular.module('fileUploadDemo',[]);
-		fileUploadDemo.controller('fileUploadDemoController', function($scope){
+		fileUploadDemo.controller('fileUploadDemoController', function($scope,$http){
 			
 			$scope.fileResult;
 			$scope.lstAttachmentWrapper;
@@ -24,7 +24,7 @@
 						$scope.uploadProgress = 0;
 					}
 					else
-						$scope.fileResult = 'Could not connect to the controller';
+						$scope.lstAttachmentWrapper = [];
 					$scope.$apply();
 				});
 			}
@@ -32,23 +32,78 @@
 			$scope.getAttachments();
 			
 			$scope.attachmentFile = {};
-			
-			$scope.fileChunkArrayIndex = -1;
-			$scope.fileChunkArraySize = -1;
-			$scope.fileChunkArray = [];
 			$scope.uploadProgress = 0;
 			
 			$scope.onFileChanged = function(element){
 				$scope.attachmentFile = {};
-				$scope.attachmentFile = element.files[0];
-				$scope.attachmentFile.id = null;
-				//console.log(element.files[0]);
-				$scope.fileReader = new FileReader();
-				$scope.fileReader.onload = function()
+				$scope.XMLHttpRequest = {};
+				if( element.files.length > 0 )
 				{
-					//console.log('Read complete:'+$scope.fileReader.result);
+					if( (element.files[0].size/1024)/1024 > 25 )
+					{
+						var objFormData = new FormData();
+		                objFormData.append("fileData", element.files[0]);
+		                objFormData.append("formData", "form-data; name='fileUpload', filename=\'" + element.files[0].name + "\'");
+		                fileName = element.files[0].name;
+						
+						$scope.XMLHttpRequest = {
+							"async": true,
+		                    "crossDomain": true,
+		                    "url": "{!$Site.Domain}/services/data/v40.0/connect/files/users/{!$User.Id}",
+		                    "method": "POST",
+		                    "headers" : {
+		                        "Authorization": "Bearer {!$Api.Session_ID}"
+		                    },
+		                    "processData": false,
+		                    "contentType": false,
+		                    "mimeType": "multipart/form-data",
+		                    "data": objFormData,
+		                    "xhr" : function(){
+		                    	var thisXhr = new XMLHttpRequest();
+		                    	if( thisXhr.upload )
+		                    	{
+		                    		thisXhr.upload.addEventListener('progress',$scope.progressTrackerXHR,false);
+		                    	}
+		                    	return thisXhr;
+		                    }
+						}
+					}
+					else
+					{
+						$scope.fileReader = new FileReader();
+						$scope.fileReader.onload = function()
+						{
+							var iCount = 1;
+							var bodyListCount = 0;
+							var chunkSize = 1023;
+							$scope.attachmentFile.Body = '';
+							$scope.attachmentFileBodyList = [];
+							do
+							{
+								var binary = '';
+								var buffer = $scope.fileReader.result.slice(iCount,( iCount + chunkSize));
+								var bytes = new Uint8Array( buffer );
+								var len = bytes.byteLength;
+								for( var inCount = 0; inCount < len; inCount ++ )
+								{
+									binary += String.fromCharCode( bytes[inCount] );
+								}
+								$scope.attachmentFileBodyList[bodyListCount] = window.btoa( binary );
+								iCount += chunkSize;
+								bodyListCount++;
+								
+							}while(iCount <= $scope.fileReader.result.byteLength)
+							$scope.attachmentFile.Body = $scope.attachmentFileBodyList.toString();
+							$scope.attachmentFile.Name = element.files[0].name;
+						}
+						$scope.fileReader.readAsArrayBuffer( element.files[0] );
+					}
+					
 				}
-				$scope.fileReader.readAsDataURL(element.files[0]);
+				else
+				{
+					alert('No file selected');
+				}
 			}
 			
 			$scope.progressTrackerXHR = function(event)
@@ -58,75 +113,85 @@
                 
 			}
 			
-			$scope.uploadAttachment = function(){
-				console.log('File reader:' + $scope.fileReader);
-				var attachment = new sforce.SObject('Attachment');
-				attachment.Body = $scope.fileReader.result.split(',')[1];
-				attachment.Name = $scope.attachmentFile.name;
-				attachment.ParentId = '{!$CurrentPage.parameters.id}';
-			 	var lstAttachments = [];
-				lstAttachments[0] = attachment;
-				sforce.connection.create( lstAttachments, function(result){
-					console.log('result:' + result);
-					$scope.getAttachments();
-				}, $scope.progressTrackerXHR );
-				/*
-				if( $scope.attachmentFile.size > (1024*1024*1024)*2 )
+			$scope.uploadFeedAttachment = function()
+			{
+				if( $scope.XMLHttpRequest != null )
 				{
-					alert('Cannot upload this file as the size is more that 2 GB');
-				}
-				else if( $scope.attachmentFile.size > (1024*1024)*35 )
-				{
-					alert('The file size is more that 35 MB. Try uploading as file instead.');
+					$.ajax($scope.XMLHttpRequest).done(function (response) {
+                        console.log(response);
+                        
+                        var responseJSON = JSON.parse(response);
+                        
+                        var contentDocumentLink = new sforce.SObject('ContentDocumentLink');
+                        contentDocumentLink.ContentDocumentId = responseJSON.id;
+                        contentDocumentLink.LinkedEntityId = '{!$CurrentPage.parameters.id}';
+                        contentDocumentLink.ShareType = 'V';
+                        
+                        var contentDocumentLinks = [];
+                        contentDocumentLinks[0] = contentDocumentLink;
+                        
+                        sforce.connection.create( contentDocumentLinks, function(result){
+							$scope.attachmentFile = {};
+							$scope.XMLHttpRequest = {};
+							$scope.getAttachments();
+						}, null );
+                        
+                        angular.element('input[type=\'file\']').val(null);
+                    })
+                    .fail(function(response){
+                        console.log(response);
+                    });
 				}
 				else
 				{
-					var fileSize;
-					if( $scope.attachmentFile.size > (1024*1024) )
-						fileSize = ($scope.attachmentFile.size / (1024*1024)).toFixed(2) + ' MB';
-					else if( $scope.attachmentFile.size > 1024 )
-						fileSize = ($scope.attachmentFile.size / 1024).toFixed(2) + ' KB';
-					else
-						fileSize = $scope.attachmentFile.size + ' Bytes';
-						
-					alert('The file size is ' + fileSize);
-					if( $scope.fileReader.result.length > 1024 )
-					{
-						$scope.fileChunkArray = $scope.fileReader.result.split(',')[1].match(/.{1,92160}/g);
-						$scope.fileChunkArraySize = $scope.fileChunkArray.length;
-						$scope.fileChunkArrayIndex = 0;
-					}
-				}
-				*/
-			} 
-			
-			$scope.uploadFileInChunks = function( chunk ){
-				if( $scope.fileChunkArrayIndex == $scope.fileChunkArraySize-1 )
-				{
-					// code for last chunk
-					Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.insertAttachment',$scope.attachmentFile.name, 'Description', '{!$CurrentPage.parameters.id}',chunk, $scope.attachmentFile.id, function(result, event){
-						$scope.uploadProgress = Math.ceil((($scope.fileChunkArrayIndex+1) / $scope.fileChunkArraySize) * 100);
-						$scope.attachmentFile = null;
-						$scope.$apply();
-						$scope.getAttachments();
-					} );
-				}
-				else if( $scope.fileChunkArrayIndex < $scope.fileChunkArraySize-1 )
-				{
-					// code for all non-last chunks
-					Visualforce.remoting.Manager.invokeAction('FileUploadDemoController.uploadChunk',$scope.attachmentFile.name, 'Description', '{!$CurrentPage.parameters.id}',chunk, $scope.attachmentFile.id, function(result, event){
-						if( $scope.attachmentFile.id == null )
-							$scope.attachmentFile.id = result;
-						$scope.uploadProgress = Math.ceil((($scope.fileChunkArrayIndex+1) / $scope.fileChunkArraySize) * 100);
-						$scope.fileChunkArrayIndex++;
-						$scope.$apply();
-					} );
+					alert('No files attached!');
 				}
 			}
 			
-			$scope.$watch('fileChunkArrayIndex',function(newValue,oldValue){
-				$scope.uploadFileInChunks($scope.fileChunkArray[newValue] );
-			});
+			$scope.deleteFeedAttachments = function()
+			{
+				sforce.connection.query('SELECT Id, ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = \'{!$CurrentPage.parameters.id}\'',function(result){
+					if( result.records )
+					{
+						var lstIdsToDelete = [];
+						if( result.records.length )
+						{
+							for( var iCount = 0; iCount < result.records.length; iCount ++ )
+							{
+								lstIdsToDelete[iCount] = result.records[iCount].ContentDocumentId;
+							}
+						}
+						else
+						{
+							lstIdsToDelete[0] = result.records.ContentDocumentId;
+						}
+						sforce.connection.deleteIds(lstIdsToDelete,function(result){
+							$scope.getAttachments();
+						},null);
+					}
+				},null);
+			}
+			
+			$scope.uploadAttachment = function(){
+				//if( $scope.attachmentFile.Body.length <= 26214400 )
+				{
+					var attachment = new sforce.SObject('Attachment');
+					attachment.Body = $scope.attachmentFile.Body;
+					attachment.Name = $scope.attachmentFile.Name;
+					attachment.ParentId = '{!$CurrentPage.parameters.id}';
+				 	var lstAttachments = [];
+					lstAttachments[0] = attachment;
+					sforce.connection.create( lstAttachments, function(result){
+						$scope.attachmentFile = {};
+						$scope.XMLHttpRequest = {};
+						$scope.getAttachments();
+					}, $scope.progressTrackerXHR );
+				}
+				//else
+				{
+					//alert('You cannot upload an attachment of size more that 25 MB');
+				}
+			} 
 			
 			$scope.deleteAllAttachments = function()
 			{
@@ -141,8 +206,10 @@
 		<div style="margin:5%">
 			<p>Upload a file here</p>
 			<input type="file" id="inputAttachment" onchange="angular.element(this).scope().onFileChanged(this)"/>
-			<input type="button" value="Upload" ng-click="uploadAttachment()"/>
+			<input type="button" value="Upload as attachment" ng-click="uploadAttachment()"/>
+			<input type="button" value="Upload as feed attachment" ng-click="uploadFeedAttachment()"/>
 			<input type="button" value="Delete all attachments" ng-click="deleteAllAttachments()"/>
+			<input type="button" value="Delete all feed attachments" ng-click="deleteFeedAttachments()"/>
 			<br/>
 			<br/>
 			 <div class="progress">

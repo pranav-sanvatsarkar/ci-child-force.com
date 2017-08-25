@@ -117,7 +117,7 @@ public class FileUploadDemoController
 		public integer serialNumber { get; set; }
 		public string title { get; set; }
 		public string description { get; set; }
-		public integer fileSize { get; set; }
+		public string fileSize { get; set; }
 		public string attachmentType { get; set; }
 		public AttachmentAction attachmentAction { get; set; }
 		public AttachmentWrapper( integer serialNumber, string title, string description, integer fileSize, AttachmentAction attachmentAction, string attachmentType )
@@ -125,7 +125,13 @@ public class FileUploadDemoController
 			this.serialNumber = serialNumber;
 			this.title = title;
 			this.description = description;
-			this.fileSize = fileSize;
+			if( fileSize > (1024*1024) )
+				this.fileSize = (fileSize / (1024*1024)) + ' MB';
+			else if( fileSize > 1024 )
+				this.fileSize = (fileSize / 1024) + ' KB';
+			else
+				this.fileSize = fileSize + ' Bytes';
+			//this.fileSize = fileSize;
 			this.attachmentAction = attachmentAction;
 			this.attachmentType = attachmentType;
 		}
