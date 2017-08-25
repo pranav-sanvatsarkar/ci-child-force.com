@@ -1,0 +1,15 @@
+<apex:page controller="AttachmentsManagerDemoController" showHeader="false">
+	<apex:includeScript value="https://code.jquery.com/jquery-3.2.1.min.js"/>
+	<apex:includeScript value="{!URLFOR($Resource.connection,'connection.js')}"/>
+	<apex:includescript value="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular.min.js"/>
+	<apex:stylesheet value="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"/>
+    
+    <script type="text/javascript">
+    	sforce.connection.sessionId = '{!GETSESSIONID()}';
+    </script>
+    
+    <apex:repeat value="{!LstAccounts}" var="account">
+    	<p>{!account.Name}</p>
+	    <c:AttachmentsManager relatedToId="{!account.Id}" appName="{!account.Id}" settings="{!AttachmentSetting}"/>
+    </apex:repeat>
+</apex:page>
