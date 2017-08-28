@@ -7,18 +7,24 @@
 	
     <div id="{!appName}" ng-controller="attachmentsManagerController" style="margin: 1%; padding: 1%;border:1px solid #377ab7;border-radius:5px">
     	<div style="margin:0.25%" ng-show="showAttachmentUpload">
-			<input type="button" value="Upload" ng-click="uploadFeedAttachment()" class="btn" ng-disabled="(fileName=='')"/>
+			<input type="button" value="Upload" ng-click="uploadFeedAttachment()" class="btn" ng-disabled="(attachment.name=='')"/>
 			<label class="btn">
 				Browse
 				<input type="file" id="inputAttachment" onchange="angular.element(this).scope().attachFile(this)" style="display:none"/>
 			</label>
-			<label style="min-width:35%; font-weight:100">
-				{{fileName}}
+			<label style="min-width:35%; font-weight:100; display:inline-block">
+				{{attachment.name}}
 			</label>
 			<br/>
 			<br/>
-			 <div class="progress" ng-show="showProgress">
-			 	<div class="progress-bar" style="width:{{uploadProgress}}%"/>
+			<p ng-show="progress.showProgress">
+				{{progress.status}}
+				<label style="float:right;font-weight:normal">
+					{{progress.counter}}%			
+				</label>
+			</p>
+			 <div class="progress" ng-show="progress.showProgress">
+			 	<div class="progress-bar" style="width:{{progress.counter}}%"/>
             </div>
 		</div>
     	<div style="margin:0.25%">
@@ -60,11 +66,17 @@
     		
     		var attachmentsManager = angular.module( '{!appName}',[]);
     		attachmentsManager.controller('attachmentsManagerController',function($scope){
-    			$scope.fileName = '';
+    			//$scope.fileName = '';
     			$scope.lstAttachmentsWrapper = [];
     			$scope.XMLHttpRequest = {};
-    			$scope.uploadProgress = 0;
-    			$scope.showProgress = false;
+    			//$scope.uploadProgress = 0;
+    			//$scope.showProgress = false;
+    			
+    			$scope.progress = {
+    				showProgress : false,
+    				status : '',
+    				counter : 0
+    			};
     			
     			$scope.showAttachmentUpload = JSON.parse('{!isEnabled}');
     			$scope.showDownloadLink = JSON.parse('{!settings.ShowDownloadLink}');
@@ -72,18 +84,20 @@
     			$scope.isDownloadEnabled = JSON.parse('{!settings.IsDownloadEnabled}');
     			$scope.isDeleteEnabled = JSON.parse('{!settings.IsDeleteEnabled}');
     			
+    			$scope.attachment = {};
+    			
     			// revised
     			$scope.attachment = {
-   					readyToUpload : false
+   					readyToUpload : false,
+   					name : ''
    				};
-   				
-   				$scope.file = {
-   					readyToUpload : false
-   				};
+    			
+    			/***************************************************************************/
     			
     			$scope.getFiles = function(){
 	    			Visualforce.remoting.Manager.invokeAction( 'AttachmentsManagerController.getFiles', '{!relatedToId}', function(result,event){
-	    				$scope.showProgress = false;
+	    				$scope.progress.showProgress = false;
+	    				
 	    				$scope.lstAttachmentsWrapper = [];
 	    				if( event.type == 'exception' && result == null )
 	    				{
@@ -109,15 +123,14 @@
 	    			} );
     			}
     			
+    			/***************************************************************************/
+    			
     			$scope.attachFile = function(element)
     			{
     				$scope.XMLHttpRequest = {};
     				
     				$scope.attachment.readyToUpload = false;
-    				$scope.file.readyToUpload = false;
     				
-    				$scope.fileName = '';
-    				$scope.$apply();
     				if( !JSON.parse('{!settings.IsAttachmentsEnabled}') )
     				{
     					if( element.files && element.files[0].size > 2147483648 )
@@ -129,10 +142,9 @@
     						var objFormData = new FormData();
 			                objFormData.append("fileData", element.files[0]);
 			                objFormData.append("formData", "form-data; name='fileUpload', filename=\'" + element.files[0].name + "\'");
-			                fileName = element.files[0].name;
-							
-							$scope.fileName = element.files[0].name;
-							$scope.file.readyToUpload = true;
+							$scope.attachment.name = element.files[0].name;
+							$scope.attachment.readyToUpload = true;
+							$scope.attachment.type = 'File';
 							$scope.$apply();
 							
 							$scope.XMLHttpRequest = {
@@ -166,102 +178,131 @@
     					}
     					else
     					{
+    						$scope.progress.status = 'Reading file...';
+    						$scope.progress.counter = 0;
+    						$scope.progress.showProgress = true;
+    						
 	    					var fileReader = new FileReader();
+	    					$scope.attachment = {};
+							$scope.attachment.body = '';
+							
+							fileReader.onprogress = function(event)
+							{
+								$scope.progress.counter = Math.ceil((event.loaded / event.total) * 100);
+	                			$scope.$apply();
+							}
 							fileReader.onload = function()
 							{
-								var iCount = 1;
-								var bodyListCount = 0;
-								var chunkSize = 1023;
-								$scope.attachment = {};
-								$scope.attachment.Body = '';
-								$scope.attachmentFileBodyList = [];
+								var chunkSize = 128;
+								var chunkCount = 0;
 								do
 								{
-									var binary = '';
-									var buffer = fileReader.result.slice(iCount,( iCount + chunkSize));
+									var buffer = fileReader.result.slice( chunkCount, (chunkCount+chunkSize)-1 );
 									var bytes = new Uint8Array( buffer );
 									var len = bytes.byteLength;
-									for( var inCount = 0; inCount < len; inCount ++ )
+									for( iCount = 0; iCount < len; iCount ++ )
 									{
-										binary += String.fromCharCode( bytes[inCount] );
+										$scope.attachment.body += window.btoa( String.fromCharCode( bytes[iCount] ) );
 									}
-									$scope.attachmentFileBodyList[bodyListCount] = window.btoa( binary );
-									iCount += chunkSize;
-									bodyListCount++;
+									chunkCount += chunkSize;
 									
-								}while(iCount <= fileReader.result.byteLength)
-								$scope.attachment.Body = $scope.attachmentFileBodyList.toString();
-								$scope.attachment.Name = element.files[0].name;
+								}while( chunkCount <= fileReader.result.byteLength )
+								$scope.attachment.name = element.files[0].name;
 								$scope.attachment.readyToUpload = true;
-								$scope.fileName = element.files[0].name;
-								$scope.$apply();
+								$scope.attachment.type = 'Attachment';
+								
+								setTimeout(function(){
+									$scope.progress.status = '';
+									$scope.progress.counter = 0;
+		    						$scope.progress.showProgress = false;
+									$scope.$apply();
+								},2000);
 							}
+							
 							fileReader.readAsArrayBuffer( element.files[0] );
     					}
     				}
     			}
     			
+    			/***************************************************************************/
+    			
     			$scope.progressTrackerXHR = function(event)
 				{
-					$scope.uploadProgress = Math.ceil((event.loaded / event.total) * 100);
+					$scope.progress.counter = Math.ceil((event.loaded / event.total) * 100);
 	                $scope.$apply();
 	                
 				}
 				
+				/***************************************************************************/
+				
 				$scope.uploadFeedAttachment = function()
 				{
-					if( $scope.file.readyToUpload )
+					if( $scope.attachment.readyToUpload )
 					{
-						$scope.showProgress = true;
-						$.ajax($scope.XMLHttpRequest).done(function (response) {
-	                        console.log(response);
-	                        
-	                        var responseJSON = JSON.parse(response);
-	                        
-	                        var contentDocumentLink = new sforce.SObject('ContentDocumentLink');
-	                        contentDocumentLink.ContentDocumentId = responseJSON.id;
-	                        contentDocumentLink.LinkedEntityId = '{!relatedToId}';
-	                        contentDocumentLink.ShareType = 'V';
-	                        
-	                        var contentDocumentLinks = [];
-	                        contentDocumentLinks[0] = contentDocumentLink;
-	                        
-	                        sforce.connection.create( contentDocumentLinks, function(result){
-								$scope.XMLHttpRequest = {};
-								$scope.uploadProgress = 0;
-								$scope.fileName = '';
+						if( $scope.attachment.type == 'File' )
+						{
+							$scope.progress.status = 'Uploading...';
+    						$scope.progress.counter = 0;
+    						$scope.progress.showProgress = true;
+    						
+							$.ajax($scope.XMLHttpRequest).done(function (response) {
+		                        console.log(response);
+		                        
+		                        var responseJSON = JSON.parse(response);
+		                        
+		                        var contentDocumentLink = new sforce.SObject('ContentDocumentLink');
+		                        contentDocumentLink.ContentDocumentId = responseJSON.id;
+		                        contentDocumentLink.LinkedEntityId = '{!relatedToId}';
+		                        contentDocumentLink.ShareType = 'V';
+		                        
+		                        var contentDocumentLinks = [];
+		                        contentDocumentLinks[0] = contentDocumentLink;
+		                        
+		                        sforce.connection.create( contentDocumentLinks, function(result){
+									$scope.XMLHttpRequest = {};
+									$scope.progress.counter = 0;
+									$scope.attachment.name = '';
+									$scope.progress.showProgress = false;
+									$scope.getFiles();
+								}, null );
+		                        
+		                        angular.element('input[type=\'file\']').val(null);
+		                    })
+		                    .fail(function(response){
+		                        console.log(response);
+		                    });
+						}
+						else
+						{
+							$scope.progress.status = 'Uploading...';
+    						$scope.progress.counter = 0;
+    						$scope.progress.showProgress = true;
+    						
+							var attachment = new sforce.SObject('Attachment');
+							attachment.Body = $scope.attachment.body;
+							attachment.Name = $scope.attachment.name;
+							attachment.ParentId = '{!relatedToId}';
+						 	var lstAttachments = [];
+							lstAttachments[0] = attachment;
+							sforce.connection.create( lstAttachments, function(result){
+								$scope.attachment = {
+									readToUpload : false
+								};
+								$scope.progress.status = '';
+	    						$scope.progress.counter = 0;
+	    						$scope.progress.showProgress = false;
+								$scope.attachment.name = '';
 								$scope.getFiles();
-							}, null );
-	                        
-	                        angular.element('input[type=\'file\']').val(null);
-	                    })
-	                    .fail(function(response){
-	                        console.log(response);
-	                    });
-					}
-					else if( $scope.attachment.readyToUpload )
-					{
-						$scope.showProgress = true;
-						var attachment = new sforce.SObject('Attachment');
-						attachment.Body = $scope.attachment.Body;
-						attachment.Name = $scope.attachment.Name;
-						attachment.ParentId = '{!relatedToId}';
-					 	var lstAttachments = [];
-						lstAttachments[0] = attachment;
-						sforce.connection.create( lstAttachments, function(result){
-							$scope.attachment = {
-								readToUpload : false
-							};
-							$scope.uploadProgress = 0;
-							$scope.fileName = '';
-							$scope.getFiles();
-						}, $scope.progressTrackerXHR );
+							}, $scope.progressTrackerXHR );
+						}
 					}
 					else
 					{
 						alert('No files attached!');
 					}
 				}
+				
+				/***************************************************************************/
 				
 	    		$scope.deleteAttachment = function( documentId ){
 	    			Visualforce.remoting.Manager.invokeAction( 'AttachmentsManagerController.deleteFile', documentId, function( result, event ){
